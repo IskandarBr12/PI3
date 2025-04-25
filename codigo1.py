@@ -7,6 +7,12 @@ porta_serial = 'COM4'  # ajuste conforme necessário
 baud_rate = 9600
 camera_index = 0
 
+# Dimensões reais da tábua
+tamanho_real_cm = {
+    "largura": 100,  # eixo X
+    "altura": 50     # eixo Y
+}
+
 # === INICIALIZA SERIAL ===
 try:
     ser = serial.Serial(porta_serial, baud_rate, timeout=1)
@@ -24,27 +30,29 @@ if not cap.isOpened():
 
 frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+print(f"Resolução da câmera: {frame_width}x{frame_height}")
 
-# Função de mapeamento simples + leve ajuste de calibração (ângulo/perspectiva)
-def mapear_com_ajuste(val, min_in, max_in, min_out, max_out, eixo='x'):
-    val_mapeado = (val - min_in) * (max_out - min_out) / (max_in - min_in) + min_out
+# === MAPEAMENTO DE PIXEL PARA CM ===
+def pixel_para_cm(x_pixel, y_pixel, largura_px, altura_px):
+    x_cm = (x_pixel / largura_px) * tamanho_real_cm["largura"]
+    y_cm = (y_pixel / altura_px) * tamanho_real_cm["altura"]
+    return x_cm, y_cm
 
-    # Correção simples baseada na posição do eixo para simular perspectiva
-    if eixo == 'x':
-        # Ajusta leve para bordas ficarem mais precisas
-        fator = 1.05 if val < max_in / 2 else 0.95
-    else:
-        # Simula efeito de profundidade
-        fator = 1.1 if val < max_in / 2 else 0.9
-
-    return int(max(min_out, min(max_out, val_mapeado * fator)))
+# === CONVERSÃO DE CM PARA ÂNGULO DO SERVO (0°–180°) ===
+def cm_para_angulo(x_cm, y_cm):
+    angulo_x = int((x_cm / tamanho_real_cm["largura"]) * 180)
+    angulo_y = int((y_cm / tamanho_real_cm["altura"]) * 180)
+    return angulo_x, angulo_y
 
 # === CALLBACK DE CLIQUE ===
 def clique(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
-        angulo_x = mapear_com_ajuste(x, 0, frame_width, 0, 180, eixo='x')
-        angulo_y = mapear_com_ajuste(y, 0, frame_height, 0, 180, eixo='y')
+        # Converte clique para coordenada real em centímetros
+        x_cm, y_cm = pixel_para_cm(x, y, frame_width, frame_height)
+        print(f"Coordenada real: {x_cm:.1f} cm, {y_cm:.1f} cm")
 
+        # Converte para ângulo de servo
+        angulo_x, angulo_y = cm_para_angulo(x_cm, y_cm)
         comando = f"X:{angulo_x},Y:{angulo_y}\n"
         print("Enviando:", comando.strip())
 
@@ -70,7 +78,7 @@ def clique(event, x, y, flags, param):
 cv2.namedWindow("Câmera")
 cv2.setMouseCallback("Câmera", clique)
 
-print("Pressione 'q' para sair.")
+print("Clique na imagem para obter a posição. Pressione 'q' para sair.")
 while True:
     ret, frame = cap.read()
     if not ret:
